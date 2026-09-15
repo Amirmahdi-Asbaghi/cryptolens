@@ -1,0 +1,6 @@
+# Keep the Docker build context small: don't ship build output or local junk.
+target
+out
+.git
+.gitignore
+*.md

@@ -1,0 +1,9 @@
+# Build output and generated files should never be committed.
+target/
+out/*.csv
+out/*.json
+
+# IDE metadata.
+.idea/
+*.iml
+.vscode/
