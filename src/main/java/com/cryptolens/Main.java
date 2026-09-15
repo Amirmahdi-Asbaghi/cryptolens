@@ -69,7 +69,16 @@ public class Main {
         // Shared pipeline for both API routes.
         app.get("/api/coins", ctx -> {
             List<Coin> coins = analyze(ctx, crypto, analyzer, converter);
-            ctx.contentType("application/json").result(toJson(coins).toString(2));
+
+            // Wrap the array with summary stats so the client doesn't have to
+            // recompute them. This also makes Analyzer.averageChange actually
+            // used, instead of dead code.
+            JSONObject payload = new JSONObject();
+            payload.put("coins", toJson(coins));
+            payload.put("averageChange", analyzer.averageChange(coins));
+            payload.put("count", coins.size());
+
+            ctx.contentType("application/json").result(payload.toString(2));
         });
 
         app.get("/api/coins.csv", ctx -> {

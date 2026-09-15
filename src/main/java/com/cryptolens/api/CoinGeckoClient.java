@@ -16,24 +16,29 @@ import java.util.List;
 /**
  * Fetches the top N coins by market cap from CoinGecko's public API.
  *
- * <p>Uses the free {@code /coins/markets} endpoint, which returns all fields
- * we need in a single request: price, 24h change, and 24h volume. No API key
- * is required, but the free tier rate-limits aggressively — a few requests
- * per minute is safe, more will get HTTP 429.
+ * <p>Authentication is optional. If the {@code COINGECKO_DEMO_KEY} environment
+ * variable is set, it's sent as the {@code x-cg-demo-api-key} header, which
+ * raises the rate limit from the shared keyless tier (~3–4 calls/min) to a
+ * dedicated 30 calls/min. If the variable is absent, requests go out
+ * keyless — useful for a fresh clone that hasn't been configured yet.
  *
- * <p>This class does HTTP and parsing only. No filtering, no sorting, no
- * currency conversion — those belong to the service layer so they stay
- * testable without a network.
+ * <p>The key is read once at construction and never logged. This class does
+ * HTTP and parsing only; filtering, sorting, and conversion live in the
+ * service layer.
  */
 public class CoinGeckoClient {
 
-    /** Free endpoint, no key. Returns an array of market objects. */
+    /** Free endpoint. Returns an array of market objects. */
     private static final String URL =
             "https://api.coingecko.com/api/v3/coins/markets" +
             "?vs_currency=usd&order=market_cap_desc&per_page=%d&page=1" +
             "&sparkline=false&price_change_percentage=24h";
 
+    /** Env var that carries the optional Demo API key. */
+    private static final String API_KEY_ENV = "COINGECKO_DEMO_KEY";
+
     private final HttpClient http;
+    private final String apiKey;
 
     public CoinGeckoClient() {
         // One HttpClient per client instance: it holds a connection pool,
@@ -41,6 +46,19 @@ public class CoinGeckoClient {
         this.http = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
+
+        // Read the key once. Empty or missing => keyless mode.
+        String key = System.getenv(API_KEY_ENV);
+        this.apiKey = (key == null || key.isBlank()) ? null : key;
+
+        // Log only whether a key is present — never the key itself.
+        if (this.apiKey == null) {
+            System.out.println("[CoinGeckoClient] No " + API_KEY_ENV
+                    + " set — running keyless (a few calls/min).");
+        } else {
+            System.out.println("[CoinGeckoClient] Demo API key detected — "
+                    + "using authenticated requests.");
+        }
     }
 
     /**
@@ -53,21 +71,26 @@ public class CoinGeckoClient {
      * @throws RuntimeException     on non-200 responses, with the status code
      */
     public List<Coin> fetchTop(int limit) throws IOException, InterruptedException {
-        HttpRequest request = HttpRequest.newBuilder()
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(String.format(URL, limit)))
                 .timeout(Duration.ofSeconds(15))
-                .header("Accept", "application/json")
-                .GET()
-                .build();
+                .header("Accept", "application/json");
+
+        // CoinGecko accepts the Demo key as a header. Headers are preferred
+        // over query params: query strings end up in server logs and browser
+        // history, headers generally do not.
+        if (apiKey != null) {
+            builder.header("x-cg-demo-api-key", apiKey);
+        }
 
         HttpResponse<String> response =
-                http.send(request, HttpResponse.BodyHandlers.ofString());
+                http.send(builder.GET().build(), HttpResponse.BodyHandlers.ofString());
 
         if (response.statusCode() != 200) {
-            // Include the body: CoinGecko returns a JSON error message here,
-            // and 429 in particular is common enough to warrant a clear hint.
+            // Include the body: CoinGecko returns a JSON error message here.
+            // 429 in particular is common enough to warrant a clear hint.
             String hint = response.statusCode() == 429
-                    ? " (rate limited — wait a minute and retry)"
+                    ? " (rate limited — wait 60 seconds and retry)"
                     : "";
             throw new RuntimeException(
                     "CoinGecko returned HTTP " + response.statusCode() + hint

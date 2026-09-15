@@ -147,8 +147,9 @@
           // Surface the server's error text rather than a generic message.
           throw new Error(`Server returned ${res.status}: ${await res.text()}`);
         }
-        const coins = await res.json();
-        render(coins, convert, summary, output);
+        const payload = await res.json();
+        // Server now sends { coins: [...], averageChange: number, count: number }.
+        render(payload.coins, payload.averageChange, payload.count, convert, summary, output);
 
         // Keep the CSV download link in sync with the current filters.
         document.getElementById('csvLink').href =
@@ -158,19 +159,20 @@
       }
     }
 
-    function render(coins, currency, summaryEl, outputEl) {
-      if (coins.length === 0) {
+    function render(coins, averageChange, count, currency, summaryEl, outputEl) {
+      if (count === 0) {
         summaryEl.innerHTML = '';
-        outputEl.innerHTML = '<p>No coins matched the selected filter.</p>';
+        outputEl.innerHTML = '<p>No coins matched the selected filter. '
+          + 'Try a different combination — for example, "Positive 24h" with '
+          + '"Biggest loss" will always return zero results.</p>';
         return;
       }
 
-      const avg = coins.reduce((s, c) => s + c.change_24h, 0) / coins.length;
-      const avgClass = avg >= 0 ? 'gain' : 'loss';
+      const avgClass = averageChange >= 0 ? 'gain' : 'loss';
       summaryEl.innerHTML =
         `<div class="summary">
-           <strong>${coins.length}</strong> coins · average 24h change:
-           <span class="${avgClass}">${avg.toFixed(2)}%</span> · prices in
+           <strong>${count}</strong> coins · average 24h change:
+           <span class="${avgClass}">${averageChange.toFixed(2)}%</span> · prices in
            <strong>${currency}</strong>
          </div>`;
 
@@ -195,7 +197,6 @@
         <tbody>${rows}</tbody>
       </table>`;
     }
-
     function formatNumber(n) {
       // Large volumes get thousands separators; small prices keep decimals.
       if (n >= 1000) return n.toLocaleString(undefined, { maximumFractionDigits: 0 });
