@@ -3,6 +3,9 @@ target/
 out/*.csv
 out/*.json
 
+# Secrets — the real .env stays on this machine only.
+.env
+
 # IDE metadata.
 .idea/
 *.iml
