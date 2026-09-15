@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CryptoLens — Crypto Market Analysis</title>
+  <style>
+    /* Minimal styling: readable, no framework, no CDN. */
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      max-width: 1100px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      color: #1a1a1a;
+      background: #fafafa;
+    }
+    h1 { margin-bottom: 0.25rem; }
+    .subtitle { color: #666; margin-top: 0; }
+    .controls {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      align-items: center;
+      margin: 1.5rem 0;
+      padding: 1rem;
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+    }
+    label { font-size: 0.9rem; color: #444; }
+    select, button {
+      padding: 0.4rem 0.7rem;
+      font-size: 0.9rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background: #fff;
+      cursor: pointer;
+    }
+    button.primary {
+      background: #2563eb;
+      color: #fff;
+      border-color: #2563eb;
+      font-weight: 500;
+    }
+    button.primary:hover { background: #1d4ed8; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td {
+      padding: 0.7rem 0.9rem;
+      text-align: left;
+      border-bottom: 1px solid #eee;
+      font-size: 0.9rem;
+    }
+    th { background: #f3f4f6; font-weight: 600; color: #333; }
+    tr:last-child td { border-bottom: none; }
+    .gain { color: #059669; font-weight: 500; }
+    .loss { color: #dc2626; font-weight: 500; }
+    .status-badge {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 10px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      text-transform: uppercase;
+    }
+    .status-badge.gain { background: #d1fae5; color: #065f46; }
+    .status-badge.loss { background: #fee2e2; color: #991b1b; }
+    .summary {
+      margin: 1rem 0;
+      padding: 0.75rem 1rem;
+      background: #eff6ff;
+      border-left: 4px solid #2563eb;
+      border-radius: 4px;
+      font-size: 0.9rem;
+    }
+    .error {
+      padding: 1rem;
+      background: #fef2f2;
+      border-left: 4px solid #dc2626;
+      border-radius: 4px;
+      color: #991b1b;
+    }
+  </style>
+</head>
+<body>
+  <h1>CryptoLens</h1>
+  <p class="subtitle">Top 10 cryptocurrencies by market cap, analyzed live.</p>
+
+  <div class="controls">
+    <label>Filter:
+      <select id="filter">
+        <option value="all">All</option>
+        <option value="positive">Positive 24h</option>
+        <option value="negative">Negative 24h</option>
+      </select>
+    </label>
+
+    <label>Sort by:
+      <select id="sort">
+        <option value="growth">Biggest gain</option>
+        <option value="loss">Biggest loss</option>
+        <option value="price">Price</option>
+        <option value="volume">Volume</option>
+      </select>
+    </label>
+
+    <label>Currency:
+      <select id="convert">
+        <option value="USD">USD</option>
+        <option value="EUR">EUR</option>
+        <option value="GBP">GBP</option>
+        <option value="JPY">JPY</option>
+        <option value="CHF">CHF</option>
+      </select>
+    </label>
+
+    <button class="primary" id="fetchBtn">Fetch data</button>
+    <a id="csvLink" href="#" download><button type="button">Download CSV</button></a>
+  </div>
+
+  <div id="summary"></div>
+  <div id="output"></div>
+
+  <script>
+    // Build the query string from the three control values and hit the API.
+    async function fetchData() {
+      const filter = document.getElementById('filter').value;
+      const sort = document.getElementById('sort').value;
+      const convert = document.getElementById('convert').value;
+      const output = document.getElementById('output');
+      const summary = document.getElementById('summary');
+
+      output.innerHTML = '<p>Loading…</p>';
+      summary.innerHTML = '';
+
+      try {
+        const res = await fetch(
+          `/api/coins?filter=${filter}&sort=${sort}&convert=${convert}`
+        );
+        if (!res.ok) {
+          // Surface the server's error text rather than a generic message.
+          throw new Error(`Server returned ${res.status}: ${await res.text()}`);
+        }
+        const coins = await res.json();
+        render(coins, convert, summary, output);
+
+        // Keep the CSV download link in sync with the current filters.
+        document.getElementById('csvLink').href =
+          `/api/coins.csv?filter=${filter}&sort=${sort}&convert=${convert}`;
+      } catch (err) {
+        output.innerHTML = `<div class="error"><strong>Failed to fetch:</strong> ${err.message}</div>`;
+      }
+    }
+
+    function render(coins, currency, summaryEl, outputEl) {
+      if (coins.length === 0) {
+        summaryEl.innerHTML = '';
+        outputEl.innerHTML = '<p>No coins matched the selected filter.</p>';
+        return;
+      }
+
+      const avg = coins.reduce((s, c) => s + c.change_24h, 0) / coins.length;
+      const avgClass = avg >= 0 ? 'gain' : 'loss';
+      summaryEl.innerHTML =
+        `<div class="summary">
+           <strong>${coins.length}</strong> coins · average 24h change:
+           <span class="${avgClass}">${avg.toFixed(2)}%</span> · prices in
+           <strong>${currency}</strong>
+         </div>`;
+
+      const rows = coins.map(c => {
+        const changeClass = c.change_24h >= 0 ? 'gain' : 'loss';
+        const sign = c.change_24h >= 0 ? '+' : '';
+        return `<tr>
+          <td>${escapeHtml(c.name)}</td>
+          <td>${escapeHtml(c.symbol.toUpperCase())}</td>
+          <td>${formatNumber(c.price)}</td>
+          <td class="${changeClass}">${sign}${c.change_24h.toFixed(2)}%</td>
+          <td>${formatNumber(c.volume)}</td>
+          <td><span class="status-badge ${c.status}">${c.status}</span></td>
+        </tr>`;
+      }).join('');
+
+      outputEl.innerHTML = `<table>
+        <thead><tr>
+          <th>Name</th><th>Symbol</th><th>Price (${currency})</th>
+          <th>24h Change</th><th>Volume (${currency})</th><th>Status</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+    }
+
+    function formatNumber(n) {
+      // Large volumes get thousands separators; small prices keep decimals.
+      if (n >= 1000) return n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+      return n.toLocaleString(undefined, { maximumFractionDigits: 4 });
+    }
+
+    // CoinGecko names are safe today, but escaping prevents any future
+    // data from injecting HTML into the page.
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      })[ch]);
+    }
+
+    document.getElementById('fetchBtn').addEventListener('click', fetchData);
+  </script>
+</body>
+</html>
